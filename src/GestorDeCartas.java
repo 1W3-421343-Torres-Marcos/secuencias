@@ -1,4 +1,5 @@
 import java.util.List;
+import java.util.StringJoiner;
 
 public class GestorDeCartas {
 
@@ -71,65 +72,77 @@ public class GestorDeCartas {
     }
 
     private ResultadoJugada buscarMejorSecuencia() {
-        ResultadoJugada mejor = new ResultadoJugada("Ninguna", 0, "");
-        int sumaRachaActual = 0;
-        int longitudRacha = 0;
-        int filaAnterior = 0;
+        int mejorSuma = 0;
+        int mejorFila = -1;
+        int mejorFin = -1;   // índice 'c' de la última carta de la mejor ventana
+        int mejorLong = 0;
 
-        for (int i = 0; i < 36; i++) {
-            int f = i / 9;
-            int c = i % 9;
+        for (int f = 0; f < 4; f++) {
+            int mascara = this.mazoUnico[f];
+            int inicioRacha = -1;
 
-            if (f != filaAnterior) {
-                sumaRachaActual = 0;
-                longitudRacha = 0;
-                filaAnterior = f;
-            }
+            for (int c = 0; c < 9; c++) {
+                if ((mascara & (1 << c)) != 0) {
+                    if (inicioRacha == -1) inicioRacha = c;
 
-            if ((this.mazoUnico[f] & (1 << c)) != 0) {
-                int valorDeLaCarta = c + 1;
-                sumaRachaActual += valorDeLaCarta;
-                longitudRacha++;
+                    int longActual = c - inicioRacha + 1;
+                    int ventana = Math.min(longActual, 4); // máximo de 4 cartas
 
-                if (longitudRacha > 4) {
-                    sumaRachaActual -= (valorDeLaCarta - 4);
-                    longitudRacha = 4;
-                }
+                    // Como los valores son crecientes, la ventana óptima siempre
+                    // termina en 'c'. Calculamos la suma por fórmula, sin acumulador.
+                    int valorFin = c + 1;
+                    int valorIni = valorFin - ventana + 1;
+                    int suma = ventana * (valorIni + valorFin) / 2;
 
-                if (longitudRacha >= 2 && sumaRachaActual > mejor.puntos) {
-                    // Armamos el detalle dinámico de las cartas de la secuencia
-                    StringBuilder detalle = new StringBuilder();
-                    int valorInicio = valorDeLaCarta - longitudRacha + 1;
-                    for(int v = valorInicio; v <= valorDeLaCarta; v++) {
-                        detalle.append(nombresElementos[f]).append(" ").append(v).append(v == valorDeLaCarta ? "" : ", ");
+                    if (ventana >= 2 && suma > mejorSuma) {
+                        // Solo guardamos coordenadas, nada de Strings todavía
+                        mejorSuma = suma;
+                        mejorFila = f;
+                        mejorFin = c;
+                        mejorLong = ventana;
                     }
-                    mejor = new ResultadoJugada("Secuencia", sumaRachaActual, detalle.toString());
+                } else {
+                    inicioRacha = -1; // se cortó la racha
                 }
-            } else {
-                sumaRachaActual = 0;
-                longitudRacha = 0;
             }
         }
-        return mejor;
+
+        if (mejorFila == -1) return new ResultadoJugada("Ninguna", 0, "");
+
+        // Construimos el String UNA sola vez, con el resultado ya definitivo
+        StringBuilder detalle = new StringBuilder();
+        int valorFin = mejorFin + 1;
+        int valorIni = valorFin - mejorLong + 1;
+        for (int v = valorIni; v <= valorFin; v++) {
+            detalle.append(nombresElementos[mejorFila]).append(" ").append(v);
+            if (v < valorFin) detalle.append(", ");
+        }
+
+        return new ResultadoJugada("Secuencia", mejorSuma, detalle.toString());
     }
 
     private ResultadoJugada buscarMejorTriada() {
         for (int c = 8; c >= 0; c--) {
-            int elementosConEstaCarta = 0;
-            StringBuilder detalle = new StringBuilder();
-
-            for (int f = 0; f < 4; f++) {
-                if ((this.mazoUnico[f] & (1 << c)) != 0) {
-                    elementosConEstaCarta++;
-                    detalle.append(nombresElementos[f]).append(" ").append(c + 1).append(" | ");
-                }
-            }
+            // Fase 1: solo contamos, sin construir texto todavía
+            int elementosConEstaCarta = Integer.bitCount(
+                    ((this.mazoUnico[0] >> c) & 1) |
+                            (((this.mazoUnico[1] >> c) & 1) << 1) |
+                            (((this.mazoUnico[2] >> c) & 1) << 2) |
+                            (((this.mazoUnico[3] >> c) & 1) << 3)
+            );
+            // Forma más legible de lo mismo:
+            // contar cuántos de los 4 mazos tienen el bit 'c' encendido
 
             if (elementosConEstaCarta >= 3) {
-                // Removemos el último " | " que sobra al final
-                String detalleFinal = detalle.toString().substring(0, detalle.length() - 3);
-                int valorDeLaCarta = c + 1;
-                return new ResultadoJugada("Tríada", valorDeLaCarta * 3, detalleFinal);
+                // Fase 2: recién ahora construimos el detalle, una sola vez
+                StringJoiner detalle = new StringJoiner(" | ");
+                for (int f = 0; f < 4; f++) {
+                    if ((this.mazoUnico[f] & (1 << c)) != 0) {
+                        detalle.add(nombresElementos[f] + " " + (c + 1));
+                    }
+                }
+                // Puntaje correcto: usa la cantidad real de elementos
+                return new ResultadoJugada("Tríada", (c + 1) * elementosConEstaCarta, detalle.toString());
             }
         }
         return new ResultadoJugada("Ninguna", 0, "");
